@@ -1,5 +1,7 @@
 # Android Inference Engine: On-Device AI Runtime for Android
 
+[![Website](https://img.shields.io/badge/Website-localai.shanaka.dev-blue.svg)](https://localai.shanaka.dev/)
+[![Google Play](https://img.shields.io/badge/Google_Play-Local_AI-414141.svg?logo=googleplay&logoColor=white)](https://play.google.com/store/apps/details?id=dev.shanaka.localai)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![API](https://img.shields.io/badge/API-26%2B-brightgreen.svg?style=flat)](https://android-arsenal.com/api?level=26)
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.localai/android-inference-engine.svg)](https://central.sonatype.com/)
@@ -8,6 +10,14 @@
 A standalone, production-ready **android on-device ai** inference runtime designed for high-performance mobile edge intelligence. Seamlessly integrates **llama.cpp android** GGUF execution, Google **litert npu acceleration**, and Google **gemini nano android aicore** system acceleration behind a unified, lightweight Kotlin Coroutines API.
 
 Engineered for **mobile llm inference**, this library provides automated **android hardware profiling**, Arm **kleidiai android** micro-kernel acceleration, self-calibrating tokens-per-second (TPS) prediction, and **multi-token prediction android** (MTP) speculative decoding.
+
+---
+
+## 📱 Powered by Local AI
+
+`android-inference-engine` is the production runtime powering the consumer flagship app **Local AI** on Android:
+- **Official Portal**: [localai.shanaka.dev](https://localai.shanaka.dev/)
+- **Get it on Google Play**: [dev.shanaka.localai](https://play.google.com/store/apps/details?id=dev.shanaka.localai)
 
 ---
 
@@ -46,6 +56,16 @@ Engineered for **mobile llm inference**, this library provides automated **andro
 ---
 
 ## Key Features
+
+### 🎯 On-Device Model Compatibility Matrix
+
+| Model Family | Target Sizes | File Format / Quantization | Runtime Backend | Acceleration Delegates | Context Window | Key Capabilities |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Llama 3.2** | 1B, 3B | GGUF (`Q4_K_M`, `Q8_0`) | `LlamaCppEngine` | Vulkan GPU, ARM NEON | Up to 128K | High-throughput mobile chat, edge agent routing |
+| **Gemma 2** | 2B, 9B | GGUF, LiteRT (`.litertlm`) | `LiteRTEngine` / `LlamaCppEngine` | NPU (Hexagon/APU), GPU | 8K sliding | Multi-Token Prediction (MTP) speculative decoding |
+| **Qwen 2.5** | 0.5B, 1.5B, 3B, 7B | GGUF (`Q4_K_M`, `Q5_K_M`) | `LlamaCppEngine` | ARM KleidiAI, Vulkan | 32K | Multilingual chat, structured JSON, tool-use prompts |
+| **DeepSeek-R1** | 1.5B, 7B (Distill) | GGUF (`Q4_K_M`) | `LlamaCppEngine` | ARM DotProd / I8MM | 16K | Chain-of-thought `<think>` tags with auto-stripping |
+| **Gemini Nano** | System-managed | OS unbundled package | `AiCoreEngine` | Android AICore / NPU | OS Budgeted | Turnkey zero-MB APK summarization, rewrite, proofreading |
 
 1. **Tri-Engine Unified Runtime**:
    - **llama.cpp (GGUF universal)**: High-speed quantized LLM execution (`gguf kotlin`) with ARM NEON and Vulkan GPU offloading.
@@ -160,6 +180,47 @@ println("Corrected: $correctedText")
 // Tone rewriting
 val formalText = LocalInference.rewrite(context, "hey whats up", style = "formal")
 println("Rewritten: $formalText")
+```
+
+### 4. Asset Loading Recipe: Unpacking Models from Assets to Storage
+
+Because native C++ runtimes (`llama.cpp`, Vulkan, LiteRT) require physical file paths rather than compressed APK streams, use this streaming copy recipe to unpack `.gguf` weights on first launch:
+
+```kotlin
+import android.content.Context
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
+
+suspend fun ensureModelAssetExtracted(
+    context: Context,
+    assetFileName: String,
+    destFileName: String = assetFileName
+): String = withContext(Dispatchers.IO) {
+    val destFile = File(context.filesDir, destFileName)
+    // Only extract if file doesn't exist or is empty
+    if (!destFile.exists() || destFile.length() == 0L) {
+        context.assets.open(assetFileName).use { input ->
+            FileOutputStream(destFile).use { output ->
+                val buffer = ByteArray(64 * 1024)
+                var bytesRead: Int
+                while (input.read(buffer).also { bytesRead = it } != -1) {
+                    output.write(buffer, 0, bytesRead)
+                }
+                output.flush()
+            }
+        }
+    }
+    destFile.absolutePath
+}
+
+// Usage Example:
+lifecycleScope.launch {
+    val modelPath = ensureModelAssetExtracted(context, "models/qwen2.5-1.5b-instruct-q4_k_m.gguf")
+    val engine = LocalInference.createEngine(context, EngineType.LLAMA_CPP)
+    engine.loadModel(modelPath = modelPath, modelId = "Qwen/Qwen2.5-1.5B-Instruct")
+}
 ```
 
 ---
